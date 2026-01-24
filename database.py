@@ -1,5 +1,5 @@
 """
-Database manager for Supabase operations
+Database manager for Supabase operations - Fixed for correct table names
 """
 
 import os
@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 import logging
 load_dotenv()
-
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class DatabaseManager:
     async def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user by user_id"""
         try:
-            result = self.supabase.table('users').select('*').eq('user_id', user_id).execute()
+            result = self.supabase.table('converter_users').select('*').eq('user_id', user_id).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             logger.error(f"Error getting user {user_id}: {e}")
@@ -37,17 +36,22 @@ class DatabaseManager:
         """Create a new user"""
         try:
             data = {
-                'user_id': user_id,
+                'user_id': user_id,  # Changed from 'id' to 'user_id'
                 'username': username,
                 'first_name': first_name,
                 'last_name': last_name,
                 'language_code': language_code,
-                'is_subscribed': False
+                'subscription_tier': 'free',  # Default to free tier
             }
-            self.supabase.table('users').insert(data).execute()
+            self.supabase.table('converter_users').insert(data).execute()
             
             # Create user stats entry
-            self.supabase.table('user_stats').insert({'user_id': user_id}).execute()
+            self.supabase.table('converter_user_stats').insert({
+                'user_id': user_id,
+                'conversions_today': 0,
+                'total_conversions': 0,
+                'total_files_size_bytes': 0
+            }).execute()
             return True
         except Exception as e:
             logger.error(f"Error creating user {user_id}: {e}")
@@ -56,7 +60,7 @@ class DatabaseManager:
     async def update_user_language(self, user_id: int, language_code: str) -> bool:
         """Update user's language preference"""
         try:
-            self.supabase.table('users').update(
+            self.supabase.table('converter_users').update(
                 {'language_code': language_code}
             ).eq('user_id', user_id).execute()
             return True
@@ -64,24 +68,36 @@ class DatabaseManager:
             logger.error(f"Error updating user language {user_id}: {e}")
             return False
     
-    async def is_user_subscribed(self, user_id: int) -> bool:
-        """Check if user has active subscription"""
+    async def get_user_tier(self, user_id: int) -> str:
+        """Get user's subscription tier (free/premium)"""
         try:
             user = await self.get_user(user_id)
-            if not user or not user.get('is_subscribed'):
-                return False
+            if not user:
+                return 'free'
             
-            if user.get('subscription_expires_at'):
-                expiry = datetime.fromisoformat(user['subscription_expires_at'].replace('Z', '+00:00'))
-                return expiry > datetime.now(timezone.utc)
+            # Check if premium subscription is still valid
+            if user.get('subscription_tier') == 'premium':
+                if user.get('subscription_expires_at'):
+                    expiry = datetime.fromisoformat(user['subscription_expires_at'].replace('Z', '+00:00'))
+                    if expiry > datetime.now(timezone.utc):
+                        return 'premium'
+                    else:
+                        # Subscription expired, downgrade to free
+                        await self.downgrade_to_free(user_id)
+                        return 'free'
             
-            return False
+            return user.get('subscription_tier', 'free')
         except Exception as e:
-            logger.error(f"Error checking subscription for {user_id}: {e}")
-            return False
+            logger.error(f"Error getting user tier {user_id}: {e}")
+            return 'free'
     
-    async def activate_subscription(self, user_id: int, days: int) -> bool:
-        """Activate or extend user subscription"""
+    async def is_premium_user(self, user_id: int) -> bool:
+        """Check if user has active premium subscription"""
+        tier = await self.get_user_tier(user_id)
+        return tier == 'premium'
+    
+    async def upgrade_to_premium(self, user_id: int, days: int) -> bool:
+        """Upgrade user to premium tier"""
         try:
             user = await self.get_user(user_id)
             current_expiry = None
@@ -98,14 +114,29 @@ class DatabaseManager:
             else:
                 new_expiry = datetime.now(timezone.utc) + timedelta(days=days)
             
-            self.supabase.table('users').update({
-                'is_subscribed': True,
+            self.supabase.table('converter_users').update({
+                'subscription_tier': 'premium',
                 'subscription_expires_at': new_expiry.isoformat()
             }).eq('user_id', user_id).execute()
             
+            logger.info(f"✅ User {user_id} upgraded to premium until {new_expiry.isoformat()}")
             return True
         except Exception as e:
-            logger.error(f"Error activating subscription for {user_id}: {e}")
+            logger.error(f"Error upgrading user {user_id} to premium: {e}")
+            return False
+    
+    async def downgrade_to_free(self, user_id: int) -> bool:
+        """Downgrade user to free tier"""
+        try:
+            self.supabase.table('converter_users').update({
+                'subscription_tier': 'free',
+                'subscription_expires_at': None
+            }).eq('user_id', user_id).execute()
+            
+            logger.info(f"ℹ️ User {user_id} downgraded to free tier")
+            return True
+        except Exception as e:
+            logger.error(f"Error downgrading user {user_id}: {e}")
             return False
     
     # Payment Management
@@ -120,7 +151,7 @@ class DatabaseManager:
                 'payment_proof_file_id': file_id,
                 'status': 'pending'
             }
-            result = self.supabase.table('payments').insert(data).execute()
+            result = self.supabase.table('converter_payments').insert(data).execute()
             return result.data[0]['id'] if result.data else None
         except Exception as e:
             logger.error(f"Error creating payment for {user_id}: {e}")
@@ -129,7 +160,7 @@ class DatabaseManager:
     async def get_payment(self, payment_id: int) -> Optional[Dict[str, Any]]:
         """Get payment by ID"""
         try:
-            result = self.supabase.table('payments').select('*').eq('id', payment_id).execute()
+            result = self.supabase.table('converter_payments').select('*').eq('id', payment_id).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             logger.error(f"Error getting payment {payment_id}: {e}")
@@ -153,14 +184,14 @@ class DatabaseManager:
             plan_data = plan.data[0]
             
             # Update payment status
-            self.supabase.table('payments').update({
+            self.supabase.table('converter_payments').update({
                 'status': 'approved',
                 'processed_at': datetime.now(timezone.utc).isoformat(),
                 'processed_by': admin_id
             }).eq('id', payment_id).execute()
             
-            # Activate subscription
-            await self.activate_subscription(
+            # Upgrade to premium
+            await self.upgrade_to_premium(
                 payment['user_id'],
                 plan_data['duration_days']
             )
@@ -174,7 +205,7 @@ class DatabaseManager:
                             reason: str = None) -> bool:
         """Reject a payment"""
         try:
-            self.supabase.table('payments').update({
+            self.supabase.table('converter_payments').update({
                 'status': 'rejected',
                 'processed_at': datetime.now(timezone.utc).isoformat(),
                 'processed_by': admin_id,
@@ -218,12 +249,20 @@ class DatabaseManager:
         """Increment user conversion statistics"""
         try:
             # Get current stats
-            stats = self.supabase.table('user_stats').select('*').eq(
+            stats = self.supabase.table('converter_user_stats').select('*').eq(
                 'user_id', user_id
             ).execute()
             
             if not stats.data:
-                return False
+                # Create stats if not exists
+                self.supabase.table('converter_user_stats').insert({
+                    'user_id': user_id,
+                    'conversions_today': 1,
+                    'total_conversions': 1,
+                    'last_conversion_date': datetime.now(timezone.utc).date().isoformat(),
+                    'total_files_size_bytes': file_size
+                }).execute()
+                return True
             
             current_stats = stats.data[0]
             today = datetime.now(timezone.utc).date()
@@ -238,7 +277,7 @@ class DatabaseManager:
                     conversions_today = 0
             
             # Update stats
-            self.supabase.table('user_stats').update({
+            self.supabase.table('converter_user_stats').update({
                 'total_conversions': current_stats.get('total_conversions', 0) + 1,
                 'conversions_today': conversions_today + 1,
                 'last_conversion_date': today.isoformat(),
@@ -253,7 +292,7 @@ class DatabaseManager:
     async def get_user_stats(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Get user statistics"""
         try:
-            result = self.supabase.table('user_stats').select('*').eq(
+            result = self.supabase.table('converter_user_stats').select('*').eq(
                 'user_id', user_id
             ).execute()
             return result.data[0] if result.data else None

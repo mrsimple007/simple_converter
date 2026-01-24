@@ -1,5 +1,5 @@
 """
-Main Telegram Bot Implementation
+Main Telegram Bot Implementation - FREEMIUM MODEL
 """
 
 import os
@@ -22,15 +22,24 @@ from converters import FileConverter, get_file_extension, get_supported_formats
 
 # Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-# BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN_SIMPLELEARNINGUZ")
 CARD_NUMBER = "4073 4200 3711 6443"
 ADMIN_CHAT_ID = "8437026582"
 NOTIFICATION_ADMIN_IDS = ["8437026582"]
 
-# Logging
+# FREEMIUM LIMITS
+FREE_TIER_LIMITS = {
+    'daily_conversions': 10,  # 10 conversions per day for free users
+    'max_file_size_mb': 25,   # 25 MB max file size
+}
+
+PREMIUM_TIER_LIMITS = {
+    'daily_conversions': -1,  # Unlimited
+    'max_file_size_mb': 500,  # 500 MB max file size
+}
+
+# Logging setup
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -38,8 +47,15 @@ logger = logging.getLogger(__name__)
 db = DatabaseManager()
 converter = FileConverter()
 
-# User data storage
-user_data = {}
+
+async def get_user_limits(user_id: int) -> dict:
+    """Get user's conversion limits based on their tier"""
+    is_premium = await db.is_premium_user(user_id)
+    
+    if is_premium:
+        return PREMIUM_TIER_LIMITS
+    else:
+        return FREE_TIER_LIMITS
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,14 +80,76 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
     else:
-        # Existing user
+        # Existing user - show category selection
         lang = db_user.get('language_code', 'en')
-        welcome_text = get_text(lang, 'welcome')
+        
+        # Check if premium
+        is_premium = await db.is_premium_user(user.id)
+        
+        if is_premium:
+            welcome_text = get_text(lang, 'welcome_premium')
+        else:
+            welcome_text = get_text(lang, 'welcome_free')
+        
+        category_prompt = get_text(lang, 'select_category')
         
         await update.message.reply_text(
-            welcome_text,
+            f"{welcome_text}\n\n{category_prompt}",
+            reply_markup=get_category_keyboard(lang),
             parse_mode=ParseMode.HTML
         )
+
+async def category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle file category selection"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = await db.get_user(query.from_user.id)
+    lang = user.get('language_code', 'en')
+    
+    category = query.data.split('_')[1]
+    
+    # Store selected category
+    context.user_data['selected_category'] = category
+    
+    # Category-specific messages
+    category_messages = {
+        'pdf': get_text(lang, 'send_pdf'),
+        'word': get_text(lang, 'send_word'),
+        'image': get_text(lang, 'send_image'),
+        'excel': get_text(lang, 'send_excel'),
+        'audio': get_text(lang, 'send_audio'),
+        'video': get_text(lang, 'send_video'),
+        'ppt': get_text(lang, 'send_ppt'),
+        'other': get_text(lang, 'send_other')
+    }
+    
+    message = category_messages.get(category, get_text(lang, 'send_file'))
+    
+    # Add back button
+    keyboard = [[InlineKeyboardButton(get_text(lang, 'btn_back'), callback_data='back_to_categories')]]
+    
+    await query.edit_message_text(
+        message,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+
+async def back_to_categories_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle back to categories"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = await db.get_user(query.from_user.id)
+    lang = user.get('language_code', 'en')
+    
+    category_prompt = get_text(lang, 'select_category')
+    
+    await query.edit_message_text(
+        category_prompt,
+        reply_markup=get_category_keyboard(lang),
+        parse_mode=ParseMode.HTML
+    )
 
 
 async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,7 +164,13 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.update_user_language(user_id, lang_code)
     
     # Send welcome message
-    welcome_text = get_text(lang_code, 'welcome')
+    is_premium = await db.is_premium_user(user_id)
+    
+    if is_premium:
+        welcome_text = get_text(lang_code, 'welcome_premium')
+    else:
+        welcome_text = get_text(lang_code, 'welcome_free')
+    
     await query.edit_message_text(
         welcome_text,
         parse_mode=ParseMode.HTML
@@ -129,12 +213,14 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /subscribe command"""
+    """Handle /subscribe command - show upgrade options"""
     user = await db.get_user(update.effective_user.id)
     lang = user.get('language_code', 'en') if user else 'en'
     
-    # Check if already subscribed
-    if await db.is_user_subscribed(update.effective_user.id):
+    # Check if already premium
+    is_premium = await db.is_premium_user(update.effective_user.id)
+    
+    if is_premium:
         expiry = user.get('subscription_expires_at', '')
         if expiry:
             expiry_date = datetime.fromisoformat(expiry.replace('Z', '+00:00')).strftime('%Y-%m-%d')
@@ -144,14 +230,20 @@ async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stats = await db.get_user_stats(update.effective_user.id)
         conversions_today = stats.get('conversions_today', 0) if stats else 0
         
-        text = get_text(lang, 'subscription_active',
+        text = get_text(lang, 'premium_active',
                        expiry_date=expiry_date,
                        conversions_today=conversions_today)
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
     
-    # Show subscription plans
-    text = get_text(lang, 'subscription_info', card_number=CARD_NUMBER)
+    # Show upgrade options for free users
+    stats = await db.get_user_stats(update.effective_user.id)
+    conversions_today = stats.get('conversions_today', 0) if stats else 0
+    
+    text = get_text(lang, 'upgrade_to_premium', 
+                   card_number=CARD_NUMBER,
+                   conversions_today=conversions_today,
+                   daily_limit=FREE_TIER_LIMITS['daily_conversions'])
     
     keyboard = [
         [InlineKeyboardButton(
@@ -203,7 +295,7 @@ async def plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming documents/files"""
+    """Handle incoming documents/files - WITH FREEMIUM RESTRICTIONS"""
     user = await db.get_user(update.effective_user.id)
     lang = user.get('language_code', 'en') if user else 'en'
     
@@ -212,10 +304,25 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_payment_proof(update, context)
         return
     
-    # Check subscription
-    if not await db.is_user_subscribed(update.effective_user.id):
-        text = get_text(lang, 'subscription_required')
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    # Get user limits
+    limits = await get_user_limits(update.effective_user.id)
+    is_premium = await db.is_premium_user(update.effective_user.id)
+    
+    # Check daily limit
+    if await db.check_daily_limit(update.effective_user.id, limits['daily_conversions']):
+        text = get_text(lang, 'limit_reached_free' if not is_premium else 'limit_reached_premium')
+        
+        # Show upgrade button for free users
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
     
     # Get file info
@@ -228,12 +335,23 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_ext = get_file_extension(file_name)
     
     # Check file size limits
-    plan_id = 1  # Default, should get from user's actual plan
-    max_size_mb = 100  # Default
+    max_size_mb = limits['max_file_size_mb']
     
     if file_size > max_size_mb * 1024 * 1024:
-        text = get_text(lang, 'file_too_large', max_size=max_size_mb)
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        text = get_text(lang, 'file_too_large_free' if not is_premium else 'file_too_large_premium', 
+                       max_size=max_size_mb)
+        
+        # Show upgrade button for free users
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
     
     # Get supported formats
@@ -260,7 +378,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         ])
     
-    text = get_text(lang, 'select_format')
+    # Show remaining conversions for free users
+    if not is_premium:
+        stats = await db.get_user_stats(update.effective_user.id)
+        conversions_today = stats.get('conversions_today', 0) if stats else 0
+        remaining = limits['daily_conversions'] - conversions_today
+        
+        text = get_text(lang, 'select_format_with_limit', remaining=remaining)
+    else:
+        text = get_text(lang, 'select_format')
+    
     await update.message.reply_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -269,7 +396,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming photos"""
+    """Handle incoming photos - WITH FREEMIUM RESTRICTIONS"""
     user = await db.get_user(update.effective_user.id)
     lang = user.get('language_code', 'en') if user else 'en'
     
@@ -278,15 +405,47 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_payment_proof(update, context)
         return
     
-    # Check subscription
-    if not await db.is_user_subscribed(update.effective_user.id):
-        text = get_text(lang, 'subscription_required')
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    # Get user limits
+    limits = await get_user_limits(update.effective_user.id)
+    is_premium = await db.is_premium_user(update.effective_user.id)
+    
+    # Check daily limit
+    if await db.check_daily_limit(update.effective_user.id, limits['daily_conversions']):
+        text = get_text(lang, 'limit_reached_free' if not is_premium else 'limit_reached_premium')
+        
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
     
     # Get largest photo
     photo = update.message.photo[-1]
     file_size = photo.file_size
+    
+    # Check file size
+    max_size_mb = limits['max_file_size_mb']
+    if file_size > max_size_mb * 1024 * 1024:
+        text = get_text(lang, 'file_too_large_free' if not is_premium else 'file_too_large_premium',
+                       max_size=max_size_mb)
+        
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
     
     # Store file info
     context.user_data['file_id'] = photo.file_id
@@ -305,8 +464,55 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         ])
     
-    text = get_text(lang, 'select_format')
+    # Show remaining conversions for free users
+    if not is_premium:
+        stats = await db.get_user_stats(update.effective_user.id)
+        conversions_today = stats.get('conversions_today', 0) if stats else 0
+        remaining = limits['daily_conversions'] - conversions_today
+        
+        text = get_text(lang, 'select_format_with_limit', remaining=remaining)
+    else:
+        text = get_text(lang, 'select_format')
+    
     await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+
+
+async def upgrade_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle upgrade prompt button"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = await db.get_user(query.from_user.id)
+    lang = user.get('language_code', 'en')
+    
+    stats = await db.get_user_stats(query.from_user.id)
+    conversions_today = stats.get('conversions_today', 0) if stats else 0
+    
+    text = get_text(lang, 'upgrade_to_premium',
+                   card_number=CARD_NUMBER,
+                   conversions_today=conversions_today,
+                   daily_limit=FREE_TIER_LIMITS['daily_conversions'])
+    
+    keyboard = [
+        [InlineKeyboardButton(
+            get_text(lang, 'btn_monthly'),
+            callback_data='plan_1'
+        )],
+        [InlineKeyboardButton(
+            get_text(lang, 'btn_quarterly'),
+            callback_data='plan_2'
+        )],
+        [InlineKeyboardButton(
+            get_text(lang, 'btn_yearly'),
+            callback_data='plan_3'
+        )]
+    ]
+    
+    await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML
@@ -352,14 +558,20 @@ async def convert_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         processing_time = time.time() - start_time
         
+        # Create proper output filename (keep original name, change extension)
+        original_name_without_ext = Path(file_name).stem
+        output_filename = f"{original_name_without_ext}.{target_format}"
+        
         # Send converted file
         text = get_text(lang, 'conversion_success')
-        await context.bot.send_document(
-            chat_id=query.message.chat_id,
-            document=open(output_path, 'rb'),
-            caption=text,
-            parse_mode=ParseMode.HTML
-        )
+        with open(output_path, 'rb') as output_file:
+            await context.bot.send_document(
+                chat_id=query.message.chat_id,
+                document=output_file,
+                filename=output_filename,  # Use proper filename
+                caption=text,
+                parse_mode=ParseMode.HTML
+            )
         
         # Log conversion
         await db.log_conversion(
@@ -546,6 +758,32 @@ async def reject_payment_callback(update: Update, context: ContextTypes.DEFAULT_
         )
 
 
+
+def get_category_keyboard(lang: str):
+    """Get file category selection keyboard"""
+    keyboard = [
+        [
+            InlineKeyboardButton("📄 PDF", callback_data='category_pdf'),
+            InlineKeyboardButton("📝 Word", callback_data='category_word')
+        ],
+        [
+            InlineKeyboardButton("🖼 Images", callback_data='category_image'),
+            InlineKeyboardButton("📊 Excel", callback_data='category_excel')
+        ],
+        [
+            InlineKeyboardButton("🎵 Audio", callback_data='category_audio'),
+            InlineKeyboardButton("🎬 Video", callback_data='category_video')
+        ],
+        [
+            InlineKeyboardButton("📑 PowerPoint", callback_data='category_ppt'),
+            InlineKeyboardButton("📦 Other", callback_data='category_other')
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+
+
 def main():
     """Start the bot"""
     application = Application.builder().token(BOT_TOKEN).build()
@@ -562,15 +800,20 @@ def main():
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(plan_callback, pattern='^plan_'))
     application.add_handler(CallbackQueryHandler(convert_callback, pattern='^convert_'))
+    application.add_handler(CallbackQueryHandler(upgrade_prompt_callback, pattern='^upgrade_prompt$'))
     application.add_handler(CallbackQueryHandler(approve_payment_callback, pattern='^approve_'))
     application.add_handler(CallbackQueryHandler(reject_payment_callback, pattern='^reject_'))
-    
+    application.add_handler(CallbackQueryHandler(category_callback, pattern='^category_'))
+
     # Message handlers
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    
+    application.add_handler(CallbackQueryHandler(back_to_categories_callback, pattern='^back_to_categories$'))
+
     # Start bot
-    logger.info("Bot started")
+    logger.info("🚀 Bot started with FREEMIUM model")
+    logger.info(f"📊 Free tier: {FREE_TIER_LIMITS['daily_conversions']} conversions/day, {FREE_TIER_LIMITS['max_file_size_mb']}MB max")
+    logger.info(f"💎 Premium tier: Unlimited conversions, {PREMIUM_TIER_LIMITS['max_file_size_mb']}MB max")
     application.run_polling()
 
 

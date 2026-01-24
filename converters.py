@@ -200,13 +200,34 @@ class FileConverter:
         try:
             output_file = input_file.rsplit('.', 1)[0] + f'.{output_format}'
             
-            cmd = ['ffmpeg', '-i', input_file, '-y', output_file]
-            subprocess.run(cmd, check=True, capture_output=True, timeout=300)
+            # More robust FFmpeg command with error handling
+            cmd = [
+                'ffmpeg', '-i', input_file,
+                '-vn',  # No video
+                '-ar', '44100',  # Audio sample rate
+                '-ac', '2',  # Stereo
+                '-b:a', '192k',  # Audio bitrate
+                '-y', output_file
+            ]
             
+            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            
+            if result.returncode != 0:
+                logger.error(f"FFmpeg error: {result.stderr.decode()}")
+                return None
+                
+            if not os.path.exists(output_file):
+                logger.error(f"Output file not created: {output_file}")
+                return None
+                
             return output_file
+        except subprocess.TimeoutExpired:
+            logger.error(f"Audio conversion timeout for {input_file}")
+            return None
         except Exception as e:
             logger.error(f"Audio conversion error: {e}")
             return None
+
     
     def _convert_video(self, input_file: str, output_format: str) -> Optional[str]:
         """Convert video files using FFmpeg"""
@@ -216,17 +237,37 @@ class FileConverter:
             if output_format == 'gif':
                 # Convert to GIF with optimization
                 cmd = [
-                    'ffmpeg', '-i', input_file, '-vf',
-                    'fps=10,scale=480:-1:flags=lanczos',
-                    '-c:v', 'gif', '-y', output_file
+                    'ffmpeg', '-i', input_file,
+                    '-vf', 'fps=10,scale=480:-1:flags=lanczos',
+                    '-c:v', 'gif',
+                    '-y', output_file
                 ]
             else:
                 # Standard video conversion
-                cmd = ['ffmpeg', '-i', input_file, '-y', output_file]
+                cmd = [
+                    'ffmpeg', '-i', input_file,
+                    '-c:v', 'libx264',  # Video codec
+                    '-preset', 'medium',
+                    '-crf', '23',
+                    '-c:a', 'aac',  # Audio codec
+                    '-b:a', '128k',
+                    '-y', output_file
+                ]
             
-            subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, timeout=600)
             
+            if result.returncode != 0:
+                logger.error(f"FFmpeg error: {result.stderr.decode()}")
+                return None
+                
+            if not os.path.exists(output_file):
+                logger.error(f"Output file not created: {output_file}")
+                return None
+                
             return output_file
+        except subprocess.TimeoutExpired:
+            logger.error(f"Video conversion timeout for {input_file}")
+            return None
         except Exception as e:
             logger.error(f"Video conversion error: {e}")
             return None
