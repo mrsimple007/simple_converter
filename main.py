@@ -1,7 +1,7 @@
 """
 Main Telegram Bot Implementation - FREEMIUM MODEL
 """
-
+from datetime import datetime, timezone  
 import os
 import logging
 import asyncio
@@ -24,12 +24,13 @@ from converters import FileConverter, get_file_extension, get_supported_formats
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CARD_NUMBER = "4073 4200 3711 6443"
 ADMIN_CHAT_ID = "8437026582"
+ADMIN_USERNAME="@SimpleLearn_main_admin"
 NOTIFICATION_ADMIN_IDS = ["8437026582"]
 
 # FREEMIUM LIMITS
 FREE_TIER_LIMITS = {
-    'daily_conversions': 10,  # 10 conversions per day for free users
-    'max_file_size_mb': 25,   # 25 MB max file size
+    'daily_conversions': 30,  # 30 conversions per day for free users
+    'max_file_size_mb': 50,   # 50 MB max file size
 }
 
 PREMIUM_TIER_LIMITS = {
@@ -57,7 +58,6 @@ async def get_user_limits(user_id: int) -> dict:
     else:
         return FREE_TIER_LIMITS
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
     user = update.effective_user
@@ -79,25 +79,126 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_language_keyboard(),
             parse_mode=ParseMode.HTML
         )
+        return
+    
+    # ADMIN DASHBOARD CHECK
+    if str(user.id) in NOTIFICATION_ADMIN_IDS:
+        # Get admin statistics
+        try:
+            # Get total users
+            total_users_result = db.supabase.table('converter_users').select(
+                'user_id', count='exact'
+            ).execute()
+            total_users = total_users_result.count if total_users_result.count else 0
+            
+            # Get today's active users
+            today = datetime.now(timezone.utc).date().isoformat()
+            active_today_result = db.supabase.table('converter_user_stats').select(
+                'user_id', count='exact'
+            ).eq('last_conversion_date', today).execute()
+            todays_active_users = active_today_result.count if active_today_result.count else 0
+            
+            # Get total processed files
+            total_files_result = db.supabase.table('file_conversions').select(
+                'id', count='exact'
+            ).execute()
+            total_processed_files = total_files_result.count if total_files_result.count else 0
+            
+            # Get successful conversions
+            successful_files_result = db.supabase.table('file_conversions').select(
+                'id', count='exact'
+            ).eq('conversion_status', 'success').execute()
+            successful_files = successful_files_result.count if successful_files_result.count else 0
+            
+            # Calculate success rate
+            success_rate = (successful_files / total_processed_files * 100) if total_processed_files > 0 else 0
+            
+            # Calculate average files per user
+            avg_files_per_user = total_processed_files / total_users if total_users > 0 else 0
+            
+            admin_message = (
+                "👑 <b>Admin Dashboard</b>\n\n"
+                f"📊 Total Users: <b>{total_users}</b>\n"
+                f"👥 Active Users Today: <b>{todays_active_users}</b>\n"
+                f"📝 Total Processed Files: <b>{total_processed_files}</b>\n\n"
+                "📈 <b>Statistics:</b>\n"
+                f"• Average files per user: <b>{avg_files_per_user:.1f}</b>\n"
+                f"• Success rate: <b>{success_rate:.1f}%</b>\n"
+                f"• Successful conversions: <b>{successful_files}</b>\n\n"
+                "🔧 <b>Admin Commands:</b>\n"
+                "/stats - Detailed statistics\n"
+                "/users - User management\n"
+                "/broadcast - Send message to all users"
+            )
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("📊 Statistics", callback_data="admin_stats"),
+                    InlineKeyboardButton("👥 Users", callback_data="admin_users")
+                ],
+                [
+                    InlineKeyboardButton("💰 Payments", callback_data="admin_payments"),
+                    InlineKeyboardButton("📝 Conversions", callback_data="admin_conversions")
+                ],
+                [
+                    InlineKeyboardButton("🔄 Use Bot", callback_data="use_bot")
+                ]
+            ]
+            
+            await update.message.reply_text(
+                admin_message,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+            return
+            
+        except Exception as e:
+            logger.error(f"Error getting admin stats: {e}")
+            # Fall through to regular user flow if error
+    
+    # Existing user - show category selection
+    lang = db_user.get('language_code', 'en')
+    
+    # Check if premium
+    is_premium = await db.is_premium_user(user.id)
+    
+    if is_premium:
+        welcome_text = get_text(lang, 'welcome_premium')
     else:
-        # Existing user - show category selection
-        lang = db_user.get('language_code', 'en')
-        
-        # Check if premium
-        is_premium = await db.is_premium_user(user.id)
-        
-        if is_premium:
-            welcome_text = get_text(lang, 'welcome_premium')
-        else:
-            welcome_text = get_text(lang, 'welcome_free')
-        
-        category_prompt = get_text(lang, 'select_category')
-        
-        await update.message.reply_text(
-            f"{welcome_text}\n\n{category_prompt}",
-            reply_markup=get_category_keyboard(lang),
-            parse_mode=ParseMode.HTML
-        )
+        welcome_text = get_text(lang, 'welcome_free')
+    
+    category_prompt = get_text(lang, 'select_category')
+    
+    await update.message.reply_text(
+        f"{welcome_text}\n\n{category_prompt}",
+        reply_markup=get_category_keyboard(lang),
+        parse_mode=ParseMode.HTML
+    )
+
+
+# Add callback handler for "Use Bot" button from admin dashboard
+async def use_bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle admin switching to regular bot usage"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = await db.get_user(query.from_user.id)
+    lang = user.get('language_code', 'en')
+    
+    is_premium = await db.is_premium_user(query.from_user.id)
+    
+    if is_premium:
+        welcome_text = get_text(lang, 'welcome_premium')
+    else:
+        welcome_text = get_text(lang, 'welcome_free')
+    
+    category_prompt = get_text(lang, 'select_category')
+    
+    await query.edit_message_text(
+        f"{welcome_text}\n\n{category_prompt}",
+        reply_markup=get_category_keyboard(lang),
+        parse_mode=ParseMode.HTML
+    )
 
 async def category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle file category selection"""
@@ -282,17 +383,103 @@ async def plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Store selected plan in user context
     context.user_data['selected_plan'] = plan_id
-    context.user_data['awaiting_payment'] = True
     
     user = await db.get_user(user_id)
     lang = user.get('language_code', 'en')
     
-    text = get_text(lang, 'payment_instructions',
-                   amount=int(plan['price']),
-                   card_number=CARD_NUMBER)
+    # Show payment sent confirmation to user
+    plan_names = {
+        1: {'uz': 'Oylik', 'ru': 'Месячный', 'en': 'Monthly'},
+        2: {'uz': 'Choraklik', 'ru': 'Квартальный', 'en': 'Quarterly'},
+        3: {'uz': 'Yillik', 'ru': 'Годовой', 'en': 'Yearly'}
+    }
     
-    await query.edit_message_text(text, parse_mode=ParseMode.HTML)
-
+    confirmation_text = {
+        'uz': (
+            f"✅ <b>To'lov so'rovi yuborildi!</b>\n\n"
+            f"📦 Tarif: <b>{plan_names[plan_id]['uz']}</b>\n"
+            f"💰 Summa: <b>{int(plan['price']):,} UZS</b>\n\n"
+            f"⏳ Admin tasdiqlashini kuting.\n"
+            f"📱 Tasdiqlangach sizga xabar beramiz!\n\n"
+            f"💳 To'lov qilish uchun:\n"
+            f"1️⃣ {int(plan['price']):,} UZS ni kartaga o'tkazing: <code>{CARD_NUMBER}</code>\n"
+            f"2️⃣ To'lov chekini adminga yuboring: {ADMIN_USERNAME}\n"
+            f"3️⃣ Tasdiqlashni kuting"
+        ),
+        'ru': (
+            f"✅ <b>Запрос на оплату отправлен!</b>\n\n"
+            f"📦 Тариф: <b>{plan_names[plan_id]['ru']}</b>\n"
+            f"💰 Сумма: <b>{int(plan['price']):,} UZS</b>\n\n"
+            f"⏳ Ожидайте подтверждения админа.\n"
+            f"📱 Мы уведомим вас после подтверждения!\n\n"
+            f"💳 Для оплаты:\n"
+            f"1️⃣ Переведите {int(plan['price']):,} UZS на карту: <code>{CARD_NUMBER}</code>\n"
+            f"2️⃣ Отправьте чек админу: {ADMIN_USERNAME}\n"
+            f"3️⃣ Дождитесь подтверждения"
+        ),
+        'en': (
+            f"✅ <b>Payment request sent!</b>\n\n"
+            f"📦 Plan: <b>{plan_names[plan_id]['en']}</b>\n"
+            f"💰 Amount: <b>{int(plan['price']):,} UZS</b>\n\n"
+            f"⏳ Waiting for admin confirmation.\n"
+            f"📱 We'll notify you after confirmation!\n\n"
+            f"💳 To pay:\n"
+            f"1️⃣ Transfer {int(plan['price']):,} UZS to card: <code>{CARD_NUMBER}</code>\n"
+            f"2️⃣ Send receipt to admin: {ADMIN_USERNAME}\n"
+            f"3️⃣ Wait for confirmation"
+        )
+    }
+    
+    keyboard = [[InlineKeyboardButton(
+        get_text(lang, 'send_check') if lang == 'uz' else ("📤 Отправить чек" if lang == 'ru' else "📤 Send receipt"),
+        url=f"https://t.me/{ADMIN_USERNAME.replace('@', '')}"
+    )]]
+    
+    await query.edit_message_text(
+        confirmation_text.get(lang, confirmation_text['en']),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Send payment request to all admins
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    user_mention = f"@{query.from_user.username}" if query.from_user.username else query.from_user.first_name
+    
+    admin_text = (
+        f"💎 <b>New Premium Subscription Request</b>\n\n"
+        f"📅 Time: {timestamp}\n"
+        f"👤 User ID: <code>{user_id}</code>\n"
+        f"👤 Name: {user_mention}\n"
+        f"📦 Plan: <b>{plan_names[plan_id]['en']}</b>\n"
+        f"💰 Amount: <b>{int(plan['price']):,} UZS</b>\n"
+        f"⏰ Duration: <b>{plan['duration_days']} days</b>\n\n"
+        f"⏰ Waiting for payment confirmation..."
+    )
+    
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "✅ Approve",
+                callback_data=f"approve_sub_{user_id}_{plan_id}"
+            ),
+            InlineKeyboardButton(
+                "❌ Reject",
+                callback_data=f"reject_sub_{user_id}_{plan_id}"
+            )
+        ]
+    ]
+    
+    for admin_id in NOTIFICATION_ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=admin_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+            logger.info(f"✅ Sent subscription request to admin {admin_id}")
+        except Exception as e:
+            logger.error(f"❌ Failed to send notification to admin {admin_id}: {e}")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming documents/files - WITH FREEMIUM RESTRICTIONS"""
@@ -479,6 +666,293 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML
     )
+
+
+async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming audio files - WITH FREEMIUM RESTRICTIONS"""
+    logger.info(f"Received AUDIO from user {update.effective_user.id}")
+    
+    user = await db.get_user(update.effective_user.id)
+    lang = user.get('language_code', 'en') if user else 'en'
+    
+    # Check if waiting for payment proof
+    if context.user_data.get('awaiting_payment'):
+        await handle_payment_proof(update, context)
+        return
+    
+    # Get user limits
+    limits = await get_user_limits(update.effective_user.id)
+    is_premium = await db.is_premium_user(update.effective_user.id)
+    
+    # Check daily limit
+    if await db.check_daily_limit(update.effective_user.id, limits['daily_conversions']):
+        text = get_text(lang, 'limit_reached_free' if not is_premium else 'limit_reached_premium')
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
+    
+    # Get audio info
+    audio = update.message.audio
+    file_name = audio.file_name or f"audio_{audio.file_unique_id}.mp3"
+    file_size = audio.file_size
+    file_ext = get_file_extension(file_name)
+    
+    logger.info(f"Audio details - Name: {file_name}, Size: {file_size}, Ext: {file_ext}")
+    
+    # Check file size
+    max_size_mb = limits['max_file_size_mb']
+    if file_size > max_size_mb * 1024 * 1024:
+        text = get_text(lang, 'file_too_large_free' if not is_premium else 'file_too_large_premium',
+                       max_size=max_size_mb)
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
+    
+    # Store file info
+    context.user_data['file_id'] = audio.file_id
+    context.user_data['file_name'] = file_name
+    context.user_data['file_size'] = file_size
+    context.user_data['file_ext'] = file_ext
+    
+    # Show conversion options
+    supported_formats = get_supported_formats(file_ext)
+    logger.info(f"Supported formats for {file_ext}: {supported_formats}")
+    
+    keyboard = []
+    for fmt in supported_formats:
+        keyboard.append([
+            InlineKeyboardButton(
+                f"🎵 {fmt.upper()}",
+                callback_data=f'convert_{fmt}'
+            )
+        ])
+    
+    # Show remaining conversions for free users
+    if not is_premium:
+        stats = await db.get_user_stats(update.effective_user.id)
+        conversions_today = stats.get('conversions_today', 0) if stats else 0
+        remaining = limits['daily_conversions'] - conversions_today
+        text = get_text(lang, 'select_format_with_limit', remaining=remaining)
+    else:
+        text = get_text(lang, 'select_format')
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming voice messages (OGG format)"""
+    logger.info(f"Received VOICE from user {update.effective_user.id}")
+    
+    user = await db.get_user(update.effective_user.id)
+    lang = user.get('language_code', 'en') if user else 'en'
+    
+    # Check if waiting for payment proof
+    if context.user_data.get('awaiting_payment'):
+        await handle_payment_proof(update, context)
+        return
+    
+    # Get user limits
+    limits = await get_user_limits(update.effective_user.id)
+    is_premium = await db.is_premium_user(update.effective_user.id)
+    
+    # Check daily limit
+    if await db.check_daily_limit(update.effective_user.id, limits['daily_conversions']):
+        text = get_text(lang, 'limit_reached_free' if not is_premium else 'limit_reached_premium')
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
+    
+    # Get voice info
+    voice = update.message.voice
+    file_name = f"voice_{voice.file_unique_id}.ogg"
+    file_size = voice.file_size
+    file_ext = 'ogg'
+    
+    logger.info(f"Voice details - Name: {file_name}, Size: {file_size}, Ext: {file_ext}")
+    
+    # Check file size
+    max_size_mb = limits['max_file_size_mb']
+    if file_size > max_size_mb * 1024 * 1024:
+        text = get_text(lang, 'file_too_large_free' if not is_premium else 'file_too_large_premium',
+                       max_size=max_size_mb)
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
+    
+    # Store file info
+    context.user_data['file_id'] = voice.file_id
+    context.user_data['file_name'] = file_name
+    context.user_data['file_size'] = file_size
+    context.user_data['file_ext'] = file_ext
+    
+    # Show conversion options
+    supported_formats = get_supported_formats(file_ext)
+    logger.info(f"Supported formats for {file_ext}: {supported_formats}")
+    
+    keyboard = []
+    for fmt in supported_formats:
+        keyboard.append([
+            InlineKeyboardButton(
+                f"🎵 {fmt.upper()}",
+                callback_data=f'convert_{fmt}'
+            )
+        ])
+    
+    # Show remaining conversions for free users
+    if not is_premium:
+        stats = await db.get_user_stats(update.effective_user.id)
+        conversions_today = stats.get('conversions_today', 0) if stats else 0
+        remaining = limits['daily_conversions'] - conversions_today
+        text = get_text(lang, 'select_format_with_limit', remaining=remaining)
+    else:
+        text = get_text(lang, 'select_format')
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming video files - WITH FREEMIUM RESTRICTIONS"""
+    logger.info(f"Received VIDEO from user {update.effective_user.id}")
+    
+    user = await db.get_user(update.effective_user.id)
+    lang = user.get('language_code', 'en') if user else 'en'
+    
+    # Check if waiting for payment proof
+    if context.user_data.get('awaiting_payment'):
+        await handle_payment_proof(update, context)
+        return
+    
+    # Get user limits
+    limits = await get_user_limits(update.effective_user.id)
+    is_premium = await db.is_premium_user(update.effective_user.id)
+    
+    # Check daily limit
+    if await db.check_daily_limit(update.effective_user.id, limits['daily_conversions']):
+        text = get_text(lang, 'limit_reached_free' if not is_premium else 'limit_reached_premium')
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
+    
+    # Get video info
+    video = update.message.video
+    file_name = video.file_name or f"video_{video.file_unique_id}.mp4"
+    file_size = video.file_size
+    file_ext = get_file_extension(file_name)
+    
+    logger.info(f"Video details - Name: {file_name}, Size: {file_size}, Ext: {file_ext}")
+    
+    # Check file size
+    max_size_mb = limits['max_file_size_mb']
+    if file_size > max_size_mb * 1024 * 1024:
+        text = get_text(lang, 'file_too_large_free' if not is_premium else 'file_too_large_premium',
+                       max_size=max_size_mb)
+        if not is_premium:
+            keyboard = [[InlineKeyboardButton(
+                get_text(lang, 'btn_upgrade'),
+                callback_data='upgrade_prompt'
+            )]]
+            await update.message.reply_text(text, 
+                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                          parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        return
+    
+    # Store file info
+    context.user_data['file_id'] = video.file_id
+    context.user_data['file_name'] = file_name
+    context.user_data['file_size'] = file_size
+    context.user_data['file_ext'] = file_ext
+    
+    # Show conversion options
+    supported_formats = get_supported_formats(file_ext)
+    logger.info(f"Supported formats for {file_ext}: {supported_formats}")
+    
+    keyboard = []
+    for fmt in supported_formats:
+        keyboard.append([
+            InlineKeyboardButton(
+                f"🎬 {fmt.upper()}",
+                callback_data=f'convert_{fmt}'
+            )
+        ])
+    
+    # Show remaining conversions for free users
+    if not is_premium:
+        stats = await db.get_user_stats(update.effective_user.id)
+        conversions_today = stats.get('conversions_today', 0) if stats else 0
+        remaining = limits['daily_conversions'] - conversions_today
+        text = get_text(lang, 'select_format_with_limit', remaining=remaining)
+    else:
+        text = get_text(lang, 'select_format')
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+
+# Add general message logger to catch all unhandled message types
+async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Log unhandled message types for debugging"""
+    message = update.message
+    logger.warning(f"UNHANDLED message type from user {update.effective_user.id}:")
+    logger.warning(f"  - Has text: {message.text is not None}")
+    logger.warning(f"  - Has document: {message.document is not None}")
+    logger.warning(f"  - Has photo: {message.photo is not None}")
+    logger.warning(f"  - Has audio: {message.audio is not None}")
+    logger.warning(f"  - Has voice: {message.voice is not None}")
+    logger.warning(f"  - Has video: {message.video is not None}")
+    logger.warning(f"  - Has video_note: {message.video_note is not None}")
+    logger.warning(f"  - Has animation: {message.animation is not None}")
+    logger.warning(f"  - Has sticker: {message.sticker is not None}")
 
 
 async def upgrade_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -782,12 +1256,24 @@ def get_category_keyboard(lang: str):
     return InlineKeyboardMarkup(keyboard)
 
 
-
-
 def main():
     """Start the bot"""
+    # Import admin and broadcast modules
+    from admin import (
+        stats_command,
+        users_command,
+        admin_stats_callback,
+        admin_back_callback
+    )
+    from broadcast import BroadcastManager
+    from balance import handle_custom_amount, topup_balance_command, topup_callback, back_to_topup_callback
+    
+    # Initialize broadcast manager
+    broadcast_manager = BroadcastManager(db)
+    
     application = Application.builder().token(BOT_TOKEN).build()
     
+    # ============ EXISTING HANDLERS ============
     # Command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -796,7 +1282,22 @@ def main():
     application.add_handler(CommandHandler("subscribe", subscribe_command))
     application.add_handler(CommandHandler("language", language_command))
     
-    # Callback handlers
+    # ============ NEW ADMIN HANDLERS ============
+    # Admin commands
+    application.add_handler(CommandHandler(
+        "stats", 
+        lambda u, c: stats_command(u, c, db, NOTIFICATION_ADMIN_IDS)
+    ))
+    application.add_handler(CommandHandler(
+        "users", 
+        lambda u, c: users_command(u, c, db, NOTIFICATION_ADMIN_IDS)
+    ))
+    application.add_handler(CommandHandler(
+        "broadcast", 
+        lambda u, c: broadcast_manager.start_broadcast(u, c, NOTIFICATION_ADMIN_IDS)
+    ))
+    
+    # ============ EXISTING CALLBACKS ============
     application.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(plan_callback, pattern='^plan_'))
     application.add_handler(CallbackQueryHandler(convert_callback, pattern='^convert_'))
@@ -804,18 +1305,80 @@ def main():
     application.add_handler(CallbackQueryHandler(approve_payment_callback, pattern='^approve_'))
     application.add_handler(CallbackQueryHandler(reject_payment_callback, pattern='^reject_'))
     application.add_handler(CallbackQueryHandler(category_callback, pattern='^category_'))
-
-    # Message handlers
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(CallbackQueryHandler(back_to_categories_callback, pattern='^back_to_categories$'))
+    application.add_handler(CallbackQueryHandler(use_bot_callback, pattern='^use_bot$'))
+    application.add_handler(CallbackQueryHandler(topup_callback, pattern='^topup_'))
+    application.add_handler(CallbackQueryHandler(back_to_topup_callback, pattern='^back_to_topup$'))
+    
+    # ============ NEW ADMIN CALLBACKS ============
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin_stats_callback(u, c, db),
+        pattern='^admin_stats$'
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin_back_callback(u, c, db),
+        pattern='^admin_back$'
+    ))
+    
+    # Broadcast callbacks
+    application.add_handler(CallbackQueryHandler(
+        broadcast_manager.handle_language_selection,
+        pattern='^broadcast_lang_'
+    ))
+    application.add_handler(CallbackQueryHandler(
+        broadcast_manager.confirm_broadcast,
+        pattern='^broadcast_confirm$'
+    ))
+    application.add_handler(CallbackQueryHandler(
+        broadcast_manager.cancel_broadcast,
+        pattern='^broadcast_cancel$'
+    ))
+    
+    # ============ MESSAGE HANDLERS - UPDATE ORDER ============
+    # Broadcast message handler (MUST be before others)
+    async def check_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.user_data.get('awaiting_broadcast_message'):
+            await broadcast_manager.handle_broadcast_message(update, context)
+            return
+        # Otherwise, handle as custom amount
+        await handle_custom_amount(update, context)
+    
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND, 
+        check_broadcast_message
+    ))
+    
+    # Media handlers for broadcast
+    async def handle_broadcast_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.user_data.get('awaiting_broadcast_message'):
+            await broadcast_manager.handle_broadcast_message(update, context)
+            return
+        # Otherwise, handle normally
+        if update.message.photo:
+            await handle_photo(update, context)
+        elif update.message.video:
+            await handle_video(update, context)
+        elif update.message.document:
+            await handle_document(update, context)
+    
+    # File handlers
+    application.add_handler(MessageHandler(filters.AUDIO, handle_audio))
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    application.add_handler(MessageHandler(filters.VIDEO, handle_broadcast_media))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_broadcast_media))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_broadcast_media))
+    
+    # Catch-all for debugging
+    application.add_handler(MessageHandler(
+        ~filters.COMMAND & ~filters.AUDIO & ~filters.VOICE & ~filters.VIDEO & 
+        ~filters.Document.ALL & ~filters.PHOTO & ~filters.TEXT,
+        log_unhandled_message
+    ))
 
     # Start bot
-    logger.info("🚀 Bot started with FREEMIUM model")
-    logger.info(f"📊 Free tier: {FREE_TIER_LIMITS['daily_conversions']} conversions/day, {FREE_TIER_LIMITS['max_file_size_mb']}MB max")
-    logger.info(f"💎 Premium tier: Unlimited conversions, {PREMIUM_TIER_LIMITS['max_file_size_mb']}MB max")
+    logger.info("🚀 Bot started with ADMIN + BROADCAST system")
+    logger.info(f"👥 Admin IDs: {NOTIFICATION_ADMIN_IDS}")
     application.run_polling()
-
 
 if __name__ == "__main__":
     main()

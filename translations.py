@@ -5,10 +5,7 @@ TRANSLATIONS = {
     'en': {
         # General - Free tier
         'welcome_free': (
-            "🌟 <b>Welcome to Universal File Converter Bot!</b>\n\n"
-            "✨ <b>FREE PLAN - You're using:</b>\n"
-            "• 10 conversions per day\n"
-            "• Max file size: 25 MB\n\n"
+            "🌟 <b>Welcome to Simple File Converter!</b>\n\n"
             "I can convert files between various formats:\n"
             "📄 Documents (PDF, DOCX, TXT, PPTX, XLSX, etc.)\n"
             "🖼 Images (JPG, PNG, WEBP, SVG, etc.)\n"
@@ -16,13 +13,12 @@ TRANSLATIONS = {
             "🎥 Video (MP4, MKV, AVI, MOV, GIF)\n"
             "🗜 Archives (ZIP, TAR, RAR)\n"
             "🧾 Data (JSON, CSV, XML, Markdown)\n\n"
-            "💎 Want unlimited conversions and 500MB file size? Use /subscribe\n\n"
             "Simply send me a file and I'll show you available conversion options!"
         ),
         
-        # General - Premium tier
+        # General - Premium tierUni
         'welcome_premium': (
-            "🌟 <b>Welcome to Universal File Converter Bot!</b>\n\n"
+            "🌟 <b>Welcome to Simple File Converter!</b>\n\n"
             "💎 <b>PREMIUM USER - Enjoy:</b>\n"
             "• ♾️ Unlimited conversions\n"
             "• 📦 Max file size: 500 MB\n"
@@ -72,9 +68,9 @@ TRANSLATIONS = {
         ),
         
         'info': (
-            "ℹ️ <b>Universal File Converter Bot</b>\n\n"
+            "ℹ️ <b>Simple File Converter </b>\n\n"
             "Version: 1.0.0\n"
-            "Developer: @SimpleLearn_main_admin\n\n"
+            "Developer: @Muslimbek_01\n\n"
             "This bot helps you convert files between different formats quickly and easily.\n\n"
             "For support, contact: @SimpleLearn_main_admin"
         ),
@@ -207,10 +203,7 @@ TRANSLATIONS = {
     'ru': {
         # General - Free tier
         'welcome_free': (
-            "🌟 <b>Добро пожаловать в Universal File Converter!</b>\n\n"
-            "✨ <b>БЕСПЛАТНЫЙ ПЛАН - Вы используете:</b>\n"
-            "• 10 конвертаций в день\n"
-            "• Макс. размер файла: 25 МБ\n\n"
+            "🌟 <b>Добро пожаловать в Simple File Converter!</b>\n\n"
             "Я могу конвертировать файлы между различными форматами:\n"
             "📄 Документы (PDF, DOCX, TXT, PPTX, XLSX и др.)\n"
             "🖼 Изображения (JPG, PNG, WEBP, SVG и др.)\n"
@@ -218,13 +211,12 @@ TRANSLATIONS = {
             "🎥 Видео (MP4, MKV, AVI, MOV, GIF)\n"
             "🗜 Архивы (ZIP, TAR, RAR)\n"
             "🧾 Данные (JSON, CSV, XML, Markdown)\n\n"
-            "💎 Хотите безлимитные конвертации и 500МБ? Используйте /subscribe\n\n"
             "Просто отправьте мне файл!"
         ),
         
         # General - Premium tier
         'welcome_premium': (
-            "🌟 <b>Добро пожаловать в Universal File Converter!</b>\n\n"
+            "🌟 <b>Добро пожаловать в Simple File Converter!</b>\n\n"
             "💎 <b>ПРЕМИУМ ПОЛЬЗОВАТЕЛЬ - Наслаждайтесь:</b>\n"
             "• ♾️ Безлимитные конвертации\n"
             "• 📦 Макс. размер: 500 МБ\n"
@@ -274,7 +266,7 @@ TRANSLATIONS = {
         ),
         
         'info': (
-            "ℹ️ <b>Universal File Converter Bot</b>\n\n"
+            "ℹ️ <b>Simple File Converter Bot</b>\n\n"
             "Версия: 1.0.0\n"
             "Разработчик: @SimpleLearn_main_admin\n\n"
             "Этот бот помогает быстро конвертировать файлы.\n\n"
@@ -420,10 +412,7 @@ TRANSLATIONS = {
     'uz': {
         # General - Free tier
         'welcome_free': (
-            "🌟 <b>Universal File Converter botiga xush kelibsiz!</b>\n\n"
-            "✨ <b>BEPUL REJA - Siz foydalanasiz:</b>\n"
-            "• Kuniga 10 ta konvertatsiya\n"
-            "• Maks. fayl hajmi: 25 MB\n\n"
+            "🌟 <b>Simple File Converter ga xush kelibsiz!</b>\n\n"
             "Men fayllarni turli formatlar orasida o'zgartira olaman:\n"
             "📄 Hujjatlar (PDF, DOCX, TXT, PPTX, XLSX va boshqalar)\n"
             "🖼 Rasmlar (JPG, PNG, WEBP, SVG va boshqalar)\n"
@@ -431,14 +420,13 @@ TRANSLATIONS = {
             "🎥 Video (MP4, MKV, AVI, MOV, GIF)\n"
             "🗜 Arxivlar (ZIP, TAR, RAR)\n"
             "🧾 Ma'lumotlar (JSON, CSV, XML, Markdown)\n\n"
-            "💎 Cheksiz konvertatsiya va 500MB kerakmi? /subscribe yuboring\n\n"
-            "Shunchaki menga fayl yuboring!"
+            "Shunchaki menga faylni yuboring!"
         ),
         
         # General - Premium tier
         'welcome_premium': (
-            "🌟 <b>Universal File Converter botiga xush kelibsiz!</b>\n\n"
-            "💎 <b>PREMIUM FOYDALANUVCHI - Zavqlaning:</b>\n"
+            "🌟 <b>Simple File Converter ga xush kelibsiz!</b>\n\n"
+            "💎 <b>PREMIUM FOYDALANUVCHI - Mazza qilib ishlating:</b>\n"
             "• ♾️ Cheksiz konvertatsiyalar\n"
             "• 📦 Maks. hajm: 500 MB\n"
             "• ⚡ Tezkor ishlov\n\n"
@@ -449,10 +437,10 @@ TRANSLATIONS = {
             "🎥 Video (MP4, MKV, AVI, MOV, GIF)\n"
             "🗜 Arxivlar (ZIP, TAR, RAR)\n"
             "🧾 Ma'lumotlar (JSON, CSV, XML, Markdown)\n\n"
-            "Shunchaki menga fayl yuboring!"
+            "Shunchaki menga faylni yuboring!"
         ),
         
-        'language_selected': "✅ Til o'zbekcha qilib o'rnatildi",
+        'language_selected': "✅ Til o'zbekcha qilib o'rnatildi! /start bilan botni boshlashingiz mumkin.",
         'select_language': "🌍 Iltimos, tilni tanlang:",
         
         'help': (
@@ -487,9 +475,9 @@ TRANSLATIONS = {
         ),
         
         'info': (
-            "ℹ️ <b>Universal File Converter Bot</b>\n\n"
+            "ℹ️ <b>Simple File Converter Bot</b>\n\n"
             "Versiya: 1.0.0\n"
-            "Dasturchi: @SimpleLearn_main_admin\n\n"
+            "Dasturchi: @Muslimbek_01\n\n"
             "Bu bot fayllarni tez konvertatsiya qilishda yordam beradi.\n\n"
             "Qo'llab-quvvatlash: @SimpleLearn_main_admin"
         ),
@@ -537,7 +525,7 @@ TRANSLATIONS = {
         ),
         
         # File conversion
-        'processing': "⏳ Fayl ishlanmoqda...",
+        'processing': "⏳ Fayl ishlanmoqda... Iltimos kuting...",
         'converting': "⏳ {format} formatiga o'zgartirilmoqda...",
         'select_format': "📤 Formatni tanlang:",
         'select_format_with_info': "📤 Formatni tanlang ({info}):",
@@ -554,7 +542,7 @@ TRANSLATIONS = {
     
     'limit_reached_free': (
         "⚠️ <b>Kunlik limit tugadi!</b>\n\n"
-        "Siz barcha 10 ta bepul konvertatsiyani ishlatdingiz.\n\n"
+        "Siz barcha 30 ta bepul kunlik konvertatsiyani ishlatdingiz.\n\n"
         "💎 <b>Premium'ga o'ting</b>:\n"
         "• Cheksiz konvertatsiyalar\n"
         "• 500 MB fayl hajmi\n"
@@ -564,7 +552,7 @@ TRANSLATIONS = {
     
     # Limits - Premium tier
     'file_too_large_premium': (
-        "❌ <b>Fayl juda katta</b>\n\n"
+        "❌ <b>Fayl hajmi juda katta</b>\n\n"
         "Maksimum: {max_size} MB"
     ),
     
