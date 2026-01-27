@@ -585,20 +585,64 @@ TRANSLATIONS = {
     'btn_cancel': "❌ Bekor qilish",
 
     'select_format': "📤 O'zgartirmoqchi bo'lgan formatini tanlang:",
-    'select_format_with_limit': "📤 O'zgartirmoqchi bo'lgan formatini tanlang:\n🆓 Bugun qolgan: {remaining} konvertatsiya\n💡 Cheksiz olish uchun /subscribe",
+    'select_format_with_limit': "✅Faylingiz qabul qilindi! \n\n📤 O'zgartirmoqchi bo'lgan formatini tanlang:\n🆓 Bugun qolgan: {remaining} konvertatsiya\n💡 Cheksiz olish uchun /subscribe",
     'converting': "⏳ Fayl {format} formatiga konvertatsiya qilinmoqda...",
-    'conversion_success': "✅ Konvertatsiya muvaffaqiyatli! Mana sizning faylingiz:",
-    'conversion_failed': "❌ Konvertatsiya xato: {error}\n\nIltimos, qaytadan urinib ko'ring yoki boshqa formatni tanlang.",
+    'conversion_success': "✅ Konvertatsiya muvaffaqiyatli bajarildi! Mana sizning faylingiz:",
+    'conversion_failed': "❌ Konvertatsiyada xato: {error}\n\nIltimos, qaytadan urinib ko'ring yoki boshqa formatni tanlang.",
 
-        'select_category': "📁 Qanday fayl turini konvertatsiya qilmoqchisiz?",
-        'send_pdf': "📄 Iltimos, konvertatsiya qilish uchun PDF faylingizni yuboring.",
-        'send_word': "📝 Iltimos, Word hujjatingizni yuboring (DOC/DOCX).",
-        'send_image': "🖼 Iltimos, rasmingizni yuboring (JPG, PNG va h.k.).",
-        'send_excel': "📊 Iltimos, Excel faylingizni yuboring (XLS/XLSX).",
-        'send_audio': "🎵 Iltimos, audio faylingizni yuboring (MP3, WAV va h.k.).",
-        'send_video': "🎬 Iltimos, video faylingizni yuboring (MP4, AVI va h.k.).",
-        'send_ppt': "📑 Iltimos, PowerPoint faylingizni yuboring (PPT/PPTX).",
-        'send_other': "📎 Iltimos, faylingizni yuboring.",
+    'select_category': (
+        "📁 <b>Qaysi turdagi faylni konvertatsiya qilmoqchisiz?</b>\n\n"
+        "Quyidagi variantlardan birini tanlang yoki mos bo‘lgan fayl turini belgilang 👇\n"
+        "Bot sizga eng qulay formatni taklif qiladi."
+    ),
+
+    'send_pdf': (
+        "📄 <b>PDF fayl yuboring</b>\n\n"
+        "Iltimos, konvertatsiya qilmoqchi bo‘lgan PDF hujjatingizni yuboring.\n"
+        "Masalan: PDF → Word, PDF → JPG va boshqalar."
+    ),
+
+    'send_word': (
+        "📝 <b>Word hujjatini yuboring</b>\n\n"
+        "Iltimos, DOC yoki DOCX formatdagi Word faylingizni yuboring.\n"
+        "Masalan: Word → PDF yoki Word → TXT."
+    ),
+
+    'send_image': (
+        "🖼 <b>Rasm yuboring</b>\n\n"
+        "JPG, PNG yoki boshqa formatdagi rasm faylingizni yuboring.\n"
+        "Masalan: JPG → PNG, rasm → PDF."
+    ),
+
+    'send_excel': (
+        "📊 <b>Excel fayl yuboring</b>\n\n"
+        "Iltimos, XLS yoki XLSX formatdagi Excel hujjatingizni yuboring.\n"
+        "Masalan: Excel → PDF yoki Excel → CSV."
+    ),
+
+    'send_audio': (
+        "🎵 <b>Audio fayl yuboring</b>\n\n"
+        "MP3, WAV yoki boshqa audio faylingizni yuboring.\n"
+        "Masalan: WAV → MP3 yoki audio → boshqa format."
+    ),
+
+    'send_video': (
+        "🎬 <b>Video fayl yuboring</b>\n\n"
+        "MP4, AVI yoki boshqa video faylingizni yuboring.\n"
+        "Masalan: MP4 → AVI yoki video → audio."
+    ),
+
+    'send_ppt': (
+        "📑 <b>PowerPoint fayl yuboring</b>\n\n"
+        "PPT yoki PPTX formatdagi prezentatsiya faylingizni yuboring.\n"
+        "Masalan: PPT → PDF yoki PPT → rasmlar."
+    ),
+
+    'send_other': (
+        "📎 <b>Fayl yuboring</b>\n\n"
+        "Agar faylingiz yuqoridagi toifalarga mos kelmasa, uni shu yerga yuboring.\n"
+        "Bot formatni avtomatik aniqlashga harakat qiladi."
+    ),
         'btn_back': "⬅️ Orqaga",
 
 

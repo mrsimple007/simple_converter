@@ -13,8 +13,15 @@ from docx import Document
 import json
 import csv
 import xml.etree.ElementTree as ET
+from pdf2docx import Converter as PDFConverter
 
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
+
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Supported formats mapping
 FORMAT_CONVERSIONS = {
@@ -134,41 +141,84 @@ class FileConverter:
         except Exception as e:
             logger.error(f"SVG conversion error: {e}")
             return None
-    
+            
     def _convert_pdf(self, input_file: str, output_format: str) -> Optional[str]:
         """Convert PDF files"""
         try:
+            logger.info(f"📄 Starting PDF conversion: {input_file} -> {output_format}")
             output_file = input_file.rsplit('.', 1)[0] + f'.{output_format}'
             
             if output_format == 'txt':
+                logger.info(f"📝 Extracting text from PDF...")
                 # Extract text from PDF
                 with open(input_file, 'rb') as f:
                     pdf_reader = PyPDF2.PdfReader(f)
                     text = ''
-                    for page in pdf_reader.pages:
+                    for page_num, page in enumerate(pdf_reader.pages):
+                        logger.info(f"  📃 Processing page {page_num + 1}/{len(pdf_reader.pages)}")
                         text += page.extract_text() + '\n\n'
                 
                 with open(output_file, 'w', encoding='utf-8') as f:
                     f.write(text)
+                logger.info(f"✅ PDF to TXT conversion successful: {output_file}")
             
             elif output_format in ['jpg', 'png']:
+                logger.info(f"🖼️ Converting PDF to image format: {output_format}")
+                # Check if ImageMagick/convert is available
+                if not self._check_command_exists('convert'):
+                    logger.error("❌ ImageMagick 'convert' command not found. Please install ImageMagick.")
+                    logger.info("💡 On Windows: Download from https://imagemagick.org/script/download.php")
+                    logger.info("💡 On Linux: sudo apt-get install imagemagick")
+                    return None
+                
                 # Convert PDF to image (first page)
                 cmd = [
                     'convert', '-density', '300',
                     f'{input_file}[0]', '-quality', '90',
                     output_file
                 ]
-                subprocess.run(cmd, check=True, capture_output=True)
+                logger.info(f"🔧 Running command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+                
+                if result.returncode != 0:
+                    logger.error(f"❌ ImageMagick error: {result.stderr.decode()}")
+                    return None
+                logger.info(f"✅ PDF to {output_format.upper()} conversion successful: {output_file}")
             
             elif output_format == 'docx':
-                # PDF to DOCX using pandoc
-                cmd = ['pandoc', input_file, '-o', output_file]
-                subprocess.run(cmd, check=True, capture_output=True)
+                logger.info(f"📄 Converting PDF to DOCX using pdf2docx...")
+                # Use pdf2docx library for conversion
+                try:
+                    cv = PDFConverter(input_file)
+                    cv.convert(output_file, start=0, end=None)
+                    cv.close()
+                    logger.info(f"✅ PDF to DOCX conversion successful: {output_file}")
+                except Exception as e:
+                    logger.error(f"❌ pdf2docx conversion error: {e}")
+                    return None
             
             return output_file
-        except Exception as e:
-            logger.error(f"PDF conversion error: {e}")
+        except FileNotFoundError as e:
+            logger.error(f"❌ Command not found: {e}")
+            logger.error("💡 Please install required tools")
             return None
+        except subprocess.TimeoutExpired:
+            logger.error(f"⏱️ PDF conversion timeout for {input_file}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ PDF conversion error: {e}", exc_info=True)
+            return None
+
+    def _check_command_exists(self, command: str) -> bool:
+        """Check if a command exists in PATH"""
+        try:
+            if os.name == 'nt':  # Windows
+                subprocess.run(['where', command], check=True, capture_output=True)
+            else:  # Linux/Mac
+                subprocess.run(['which', command], check=True, capture_output=True)
+            return True
+        except subprocess.CalledProcessError:
+            return False
     
     def _convert_document(self, input_file: str, output_format: str) -> Optional[str]:
         """Convert document files"""

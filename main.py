@@ -19,6 +19,9 @@ from telegram.constants import ParseMode
 from database import DatabaseManager
 from translations import get_text, get_language_keyboard, TRANSLATIONS
 from converters import FileConverter, get_file_extension, get_supported_formats
+from subscribe import require_subscription, setup_subscription_handlers
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Configuration
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -43,6 +46,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
 
 # Initialize
 db = DatabaseManager()
@@ -80,8 +84,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
         return
-    
-    # ADMIN DASHBOARD CHECK
+
+    if not await require_subscription(update, context, db_user):
+        return
+
+
+    # ADMIN DASHBOARD CHECK - FIXED TO SHOW FOR ALL ADMINS
     if str(user.id) in NOTIFICATION_ADMIN_IDS:
         # Get admin statistics
         try:
@@ -482,21 +490,30 @@ async def plan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"❌ Failed to send notification to admin {admin_id}: {e}")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming documents/files - WITH FREEMIUM RESTRICTIONS"""
-    user = await db.get_user(update.effective_user.id)
+    """Handle incoming documents/files - WITH ENHANCED LOGGING"""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or update.effective_user.first_name
+    
+    logger.info(f"📄 User ID:{user_id} Name:{username} sent a document")
+    
+    user = await db.get_user(user_id)
     lang = user.get('language_code', 'en') if user else 'en'
     
     # Check if waiting for payment proof
     if context.user_data.get('awaiting_payment'):
+        logger.info(f"💳 User ID:{user_id} sent payment proof")
         await handle_payment_proof(update, context)
         return
     
     # Get user limits
-    limits = await get_user_limits(update.effective_user.id)
-    is_premium = await db.is_premium_user(update.effective_user.id)
+    limits = await get_user_limits(user_id)
+    is_premium = await db.is_premium_user(user_id)
+    
+    logger.info(f"👤 User ID:{user_id} - Premium: {is_premium}, Daily limit: {limits['daily_conversions']}")
     
     # Check daily limit
-    if await db.check_daily_limit(update.effective_user.id, limits['daily_conversions']):
+    if await db.check_daily_limit(user_id, limits['daily_conversions']):
+        logger.warning(f"⚠️ User ID:{user_id} Name:{username} reached daily limit")
         text = get_text(lang, 'limit_reached_free' if not is_premium else 'limit_reached_premium')
         
         # Show upgrade button for free users
@@ -515,16 +532,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get file info
     document = update.message.document
     if not document:
+        logger.error(f"❌ User ID:{user_id} - No document in message")
         return
     
     file_name = document.file_name
     file_size = document.file_size
     file_ext = get_file_extension(file_name)
     
+    logger.info(f"📁 User ID:{user_id} - File: {file_name}, Size: {file_size} bytes, Type: {file_ext}")
+    
     # Check file size limits
     max_size_mb = limits['max_file_size_mb']
     
     if file_size > max_size_mb * 1024 * 1024:
+        logger.warning(f"⚠️ User ID:{user_id} Name:{username} - File too large: {file_size/(1024*1024):.2f}MB > {max_size_mb}MB")
         text = get_text(lang, 'file_too_large_free' if not is_premium else 'file_too_large_premium', 
                        max_size=max_size_mb)
         
@@ -545,9 +566,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     supported_formats = get_supported_formats(file_ext)
     
     if not supported_formats:
+        logger.warning(f"⚠️ User ID:{user_id} Name:{username} - Unsupported format: {file_ext}")
         text = get_text(lang, 'unsupported_format')
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
+    
+    logger.info(f"✅ User ID:{user_id} - Supported formats for {file_ext}: {supported_formats}")
     
     # Store file info in context
     context.user_data['file_id'] = document.file_id
@@ -567,10 +591,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Show remaining conversions for free users
     if not is_premium:
-        stats = await db.get_user_stats(update.effective_user.id)
+        stats = await db.get_user_stats(user_id)
         conversions_today = stats.get('conversions_today', 0) if stats else 0
         remaining = limits['daily_conversions'] - conversions_today
         
+        logger.info(f"📊 User ID:{user_id} - Used today: {conversions_today}, Remaining: {remaining}")
         text = get_text(lang, 'select_format_with_limit', remaining=remaining)
     else:
         text = get_text(lang, 'select_format')
@@ -580,6 +605,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML
     )
+    logger.info(f"✅ Sent format selection to user ID:{user_id} Name:{username}")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -994,11 +1020,14 @@ async def upgrade_prompt_callback(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def convert_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle format conversion"""
+    """Handle format conversion - WITH ENHANCED LOGGING"""
     query = update.callback_query
     await query.answer()
     
-    user = await db.get_user(query.from_user.id)
+    user_id = query.from_user.id
+    username = query.from_user.username or query.from_user.first_name
+    
+    user = await db.get_user(user_id)
     lang = user.get('language_code', 'en')
     
     target_format = query.data.split('_')[1]
@@ -1009,47 +1038,59 @@ async def convert_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_size = context.user_data.get('file_size')
     file_ext = context.user_data.get('file_ext')
     
+    logger.info(f"🔄 User ID:{user_id} Name:{username} started conversion: {file_ext} -> {target_format}")
+    
     if not file_id:
+        logger.error(f"❌ User ID:{user_id} - No file_id in context")
         return
     
     # Send processing message
     text = get_text(lang, 'converting', format=target_format.upper())
     processing_msg = await query.edit_message_text(text, parse_mode=ParseMode.HTML)
+    logger.info(f"📤 Sent processing message to user ID:{user_id}")
     
     try:
         start_time = time.time()
         
         # Download file
+        logger.info(f"⬇️ Downloading file for user ID:{user_id} - {file_name} ({file_size} bytes)")
         file = await context.bot.get_file(file_id)
         input_path = f'/tmp/{file_id}_{file_name}'
         await file.download_to_drive(input_path)
+        logger.info(f"✅ Download complete for user ID:{user_id} - Path: {input_path}")
         
         # Convert file
+        logger.info(f"🔧 Starting conversion for user ID:{user_id} - {file_ext} to {target_format}")
         output_path = converter.convert(input_path, target_format)
         
         if not output_path or not os.path.exists(output_path):
+            logger.error(f"❌ Conversion failed for user ID:{user_id} - Output file not created")
             raise Exception("Conversion failed")
         
         processing_time = time.time() - start_time
+        output_size = os.path.getsize(output_path)
+        logger.info(f"✅ Conversion successful for user ID:{user_id} - Time: {processing_time:.2f}s, Size: {output_size} bytes")
         
         # Create proper output filename (keep original name, change extension)
         original_name_without_ext = Path(file_name).stem
         output_filename = f"{original_name_without_ext}.{target_format}"
         
         # Send converted file
+        logger.info(f"📤 Sending converted file to user ID:{user_id} - {output_filename}")
         text = get_text(lang, 'conversion_success')
         with open(output_path, 'rb') as output_file:
             await context.bot.send_document(
                 chat_id=query.message.chat_id,
                 document=output_file,
-                filename=output_filename,  # Use proper filename
+                filename=output_filename,
                 caption=text,
                 parse_mode=ParseMode.HTML
             )
+        logger.info(f"✅ File sent successfully to user ID:{user_id} Name:{username}")
         
         # Log conversion
         await db.log_conversion(
-            user_id=query.from_user.id,
+            user_id=user_id,
             original_filename=file_name,
             original_format=file_ext,
             target_format=target_format,
@@ -1057,24 +1098,26 @@ async def convert_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status='success',
             processing_time=processing_time
         )
+        logger.info(f"📊 Logged successful conversion for user ID:{user_id}")
         
         # Clean up
         try:
             os.remove(input_path)
             os.remove(output_path)
-        except:
-            pass
+            logger.info(f"🗑️ Cleaned up temp files for user ID:{user_id}")
+        except Exception as cleanup_error:
+            logger.warning(f"⚠️ Cleanup error for user ID:{user_id}: {cleanup_error}")
         
         await processing_msg.delete()
         
     except Exception as e:
-        logger.error(f"Conversion error: {e}")
+        logger.error(f"❌ Conversion error for user ID:{user_id} Name:{username} - Error: {e}", exc_info=True)
         text = get_text(lang, 'conversion_failed', error=str(e))
         await processing_msg.edit_text(text, parse_mode=ParseMode.HTML)
         
         # Log failed conversion
         await db.log_conversion(
-            user_id=query.from_user.id,
+            user_id=user_id,
             original_filename=file_name,
             original_format=file_ext,
             target_format=target_format,
@@ -1082,6 +1125,7 @@ async def convert_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             status='failed',
             error_message=str(e)
         )
+        logger.info(f"📊 Logged failed conversion for user ID:{user_id}")
 
 
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1263,7 +1307,7 @@ def main():
         stats_command,
         users_command,
         admin_stats_callback,
-        admin_back_callback
+        admin_back_callback, admin_users_callback,admin_conversions_callback, admin_payments_callback, admin_premium_users_callback
     )
     from broadcast import BroadcastManager
     from balance import handle_custom_amount, topup_balance_command, topup_callback, back_to_topup_callback
@@ -1272,7 +1316,8 @@ def main():
     broadcast_manager = BroadcastManager(db)
     
     application = Application.builder().token(BOT_TOKEN).build()
-    
+    setup_subscription_handlers(application)
+
     # ============ EXISTING HANDLERS ============
     # Command handlers
     application.add_handler(CommandHandler("start", start))
@@ -1310,7 +1355,7 @@ def main():
     application.add_handler(CallbackQueryHandler(topup_callback, pattern='^topup_'))
     application.add_handler(CallbackQueryHandler(back_to_topup_callback, pattern='^back_to_topup$'))
     
-    # ============ NEW ADMIN CALLBACKS ============
+    # ============ ADMIN CALLBACKS - COMPLETE LIST ============
     application.add_handler(CallbackQueryHandler(
         lambda u, c: admin_stats_callback(u, c, db),
         pattern='^admin_stats$'
@@ -1318,6 +1363,22 @@ def main():
     application.add_handler(CallbackQueryHandler(
         lambda u, c: admin_back_callback(u, c, db),
         pattern='^admin_back$'
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin_users_callback(u, c, db),
+        pattern='^admin_users$'
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin_payments_callback(u, c, db),
+        pattern='^admin_payments$'
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin_conversions_callback(u, c, db),
+        pattern='^admin_conversions$'
+    ))
+    application.add_handler(CallbackQueryHandler(
+        lambda u, c: admin_premium_users_callback(u, c, db),
+        pattern='^admin_premium_users$'
     ))
     
     # Broadcast callbacks
