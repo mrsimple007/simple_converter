@@ -5,12 +5,3 @@ PyPDF2>=3.0.0
 python-docx>=0.8.11
 python-dotenv>=1.0.0
 openpyxl>=3.1.0
-pdf2docx
-opencv-python-headless
-
-# Optional dependencies for full functionality
-# These require system-level installations
-# ffmpeg (for audio/video conversion)
-# imagemagick (for SVG conversion)
-# libreoffice (for document conversion)
-# pandoc (for advanced document conversion)

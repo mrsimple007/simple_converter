@@ -13,7 +13,6 @@ from docx import Document
 import json
 import csv
 import xml.etree.ElementTree as ET
-from pdf2docx import Converter as PDFConverter
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -164,44 +163,51 @@ class FileConverter:
             
             elif output_format in ['jpg', 'png']:
                 logger.info(f"🖼️ Converting PDF to image format: {output_format}")
-                # Check if ImageMagick/convert is available
-                if not self._check_command_exists('convert'):
-                    logger.error("❌ ImageMagick 'convert' command not found. Please install ImageMagick.")
-                    logger.info("💡 On Windows: Download from https://imagemagick.org/script/download.php")
-                    logger.info("💡 On Linux: sudo apt-get install imagemagick")
+                # Use pdftoppm instead of ImageMagick
+                try:
+                    # Convert PDF to PPM first, then to target format
+                    cmd = [
+                        'pdftoppm', '-png' if output_format == 'png' else '-jpeg',
+                        '-f', '1', '-l', '1', '-singlefile',
+                        '-r', '300', input_file,
+                        output_file.rsplit('.', 1)[0]
+                    ]
+                    logger.info(f"🔧 Running command: {' '.join(cmd)}")
+                    result = subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+                    
+                    if result.returncode != 0:
+                        logger.error(f"❌ pdftoppm error: {result.stderr.decode()}")
+                        return None
+                    logger.info(f"✅ PDF to {output_format.upper()} conversion successful: {output_file}")
+                except FileNotFoundError:
+                    logger.error("❌ pdftoppm not found. Installing poppler-utils...")
                     return None
-                
-                # Convert PDF to image (first page)
-                cmd = [
-                    'convert', '-density', '300',
-                    f'{input_file}[0]', '-quality', '90',
-                    output_file
-                ]
-                logger.info(f"🔧 Running command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, check=True, capture_output=True, timeout=60)
-                
-                if result.returncode != 0:
-                    logger.error(f"❌ ImageMagick error: {result.stderr.decode()}")
-                    return None
-                logger.info(f"✅ PDF to {output_format.upper()} conversion successful: {output_file}")
             
             elif output_format == 'docx':
-                logger.info(f"📄 Converting PDF to DOCX using pdf2docx...")
-                # Use pdf2docx library for conversion
+                logger.info(f"📄 Converting PDF to DOCX using alternative method...")
+                # Use pypandoc or simple text extraction instead of pdf2docx
                 try:
-                    cv = PDFConverter(input_file)
-                    cv.convert(output_file, start=0, end=None)
-                    cv.close()
+                    # Extract text and create a simple DOCX
+                    from docx import Document as DocxDocument
+                    
+                    with open(input_file, 'rb') as f:
+                        pdf_reader = PyPDF2.PdfReader(f)
+                        doc = DocxDocument()
+                        
+                        for page_num, page in enumerate(pdf_reader.pages):
+                            logger.info(f"  📃 Processing page {page_num + 1}/{len(pdf_reader.pages)}")
+                            text = page.extract_text()
+                            doc.add_paragraph(text)
+                            if page_num < len(pdf_reader.pages) - 1:
+                                doc.add_page_break()
+                        
+                        doc.save(output_file)
                     logger.info(f"✅ PDF to DOCX conversion successful: {output_file}")
                 except Exception as e:
-                    logger.error(f"❌ pdf2docx conversion error: {e}")
+                    logger.error(f"❌ DOCX conversion error: {e}")
                     return None
             
             return output_file
-        except FileNotFoundError as e:
-            logger.error(f"❌ Command not found: {e}")
-            logger.error("💡 Please install required tools")
-            return None
         except subprocess.TimeoutExpired:
             logger.error(f"⏱️ PDF conversion timeout for {input_file}")
             return None
