@@ -20,37 +20,46 @@ from database import DatabaseManager
 from translations import get_text, get_language_keyboard, TRANSLATIONS
 from converters import FileConverter, get_file_extension, get_supported_formats
 from subscribe import require_subscription, setup_subscription_handlers
-
-logging.getLogger("httpx").setLevel(logging.WARNING)
-
-# Configuration
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CARD_NUMBER = "4073 4200 3711 6443"
-ADMIN_CHAT_ID = "8437026582"
-ADMIN_USERNAME="@SimpleLearn_main_admin"
-NOTIFICATION_ADMIN_IDS = ["8437026582"]
-
-# FREEMIUM LIMITS
-FREE_TIER_LIMITS = {
-    'daily_conversions': 30,  # 30 conversions per day for free users
-    'max_file_size_mb': 50,   # 50 MB max file size
-}
-
-PREMIUM_TIER_LIMITS = {
-    'daily_conversions': -1,  # Unlimited
-    'max_file_size_mb': 500,  # 500 MB max file size
-}
-
-# Logging setup
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+from config import *
 
 
 # Initialize
 db = DatabaseManager()
 converter = FileConverter()
+
+async def notify_admin_new_user(context: ContextTypes.DEFAULT_TYPE, user_id: int, username: str, first_name: str, last_name: str):
+    """Notify admin about new user registration"""
+    try:
+        # Get total user count
+        total_users_result = db.supabase.table('converter_users').select('user_id', count='exact').execute()
+        total_users = total_users_result.count if total_users_result.count else 0
+        
+        # Format user info
+        full_name = f"{first_name or ''} {last_name or ''}".strip()
+        username_str = f"@{username}" if username else "No username"
+        
+        admin_message = (
+            "🆕 <b>New User Registered!</b>\n\n"
+            f"👤 <b>Name:</b> {full_name or 'No name'}\n"
+            f"🔤 <b>Username:</b> {username_str}\n"
+            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
+            f"📊 <b>Total Users:</b> {total_users}"
+        )
+        
+        # Send to all notification admins
+        for admin_id in NOTIFICATION_ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=admin_message,
+                    parse_mode=ParseMode.HTML
+                )
+                logger.info(f"✅ Sent new user notification to admin {admin_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send notification to admin {admin_id}: {e}")
+    
+    except Exception as e:
+        logger.error(f"Error in notify_admin_new_user: {e}")
 
 
 async def get_user_limits(user_id: int) -> dict:
@@ -70,14 +79,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db_user = await db.get_user(user.id)
     
     if not db_user:
-        # New user - ask for language
+        # New user - create in database first
         await db.create_user(
             user_id=user.id,
             username=user.username,
             first_name=user.first_name,
-            last_name=user.last_name
+            last_name=user.last_name,
+            language_code='en'  # Default language
+        )
+        logger.info(f"NEW_USER_AUTO_SAVED: User {user.id} auto-saved with default 'en'")
+        
+        # ⭐ Notify admin about new user
+        await notify_admin_new_user(
+            context=context,
+            user_id=user.id,
+            username=user.username or '',
+            first_name=user.first_name or '',
+            last_name=user.last_name or ''
         )
         
+        # Ask for language selection
         await update.message.reply_text(
             "🌍 <b>Please select your language / Пожалуйста, выберите язык / Iltimos, tilni tanlang:</b>",
             reply_markup=get_language_keyboard(),
@@ -85,9 +106,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Existing user - check subscription first
     if not await require_subscription(update, context, db_user):
         return
-
 
     # ADMIN DASHBOARD CHECK - FIXED TO SHOW FOR ALL ADMINS
     if str(user.id) in NOTIFICATION_ADMIN_IDS:
@@ -164,7 +185,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Error getting admin stats: {e}")
             # Fall through to regular user flow if error
     
-    # Existing user - show category selection
+    # Existing user - show category selection with their saved language
     lang = db_user.get('language_code', 'en')
     
     # Check if premium

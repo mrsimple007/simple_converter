@@ -9,14 +9,14 @@ from telegram.constants import ChatMemberStatus
 logger = logging.getLogger(__name__)
 
 # Configuration
-FORCE_SUBSCRIPTION_ENABLED = True
+FORCE_SUBSCRIPTION_ENABLED = False
 
 REQUIRED_CHANNELS = [
-        # {
-        #     'id': '@Muslimbek_01',
-        #     'name': 'Simple Slides | Rasmiy kanal',
-        #     'url': 'https://t.me/muslimbek_01'
-        # },
+        {
+            'id': '@Muslimbek_01',
+            'name': 'Simple Slides | Rasmiy kanal',
+            'url': 'https://t.me/muslimbek_01'
+        },
 
         # {
         #     'id': '@uzbek_europe',  
@@ -24,11 +24,11 @@ REQUIRED_CHANNELS = [
         #     'url': 'https://t.me/uzbek_europe'
         # },
 
-        {
-            'id': '@talabaga_tezkor_yordam',  
-            'name': 'Talabalarga sifatli yordam',
-            'url': 'https://t.me/talabaga_tezkor_yordam'
-        },
+        # {
+        #     'id': '@talabaga_tezkor_yordam',  
+        #     'name': 'Talabalarga sifatli yordam',
+        #     'url': 'https://t.me/talabaga_tezkor_yordam'
+        # },
 
 
         # {

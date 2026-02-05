@@ -1,7 +1,3 @@
-"""
-Database manager for Supabase operations - Fixed for correct table names
-"""
-
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
@@ -40,12 +36,12 @@ class DatabaseManager:
         """Create a new user"""
         try:
             data = {
-                'user_id': user_id,  # Changed from 'id' to 'user_id'
+                'user_id': user_id, 
                 'username': username,
                 'first_name': first_name,
                 'last_name': last_name,
                 'language_code': language_code,
-                'subscription_tier': 'free',  # Default to free tier
+                'subscription_tier': 'free', 
             }
             self.supabase.table('converter_users').insert(data).execute()
             
