@@ -901,8 +901,23 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received VIDEO from user {update.effective_user.id}")
     
     user = await db.get_user(update.effective_user.id)
+    user = await db.get_user(update.effective_user.id)
     lang = user.get('language_code', 'en') if user else 'en'
-    
+
+    # With this (also auto-creates missing user):
+    user = await db.get_user(update.effective_user.id)
+    if not user:
+        tg_user = update.effective_user
+        await db.create_user(
+            user_id=tg_user.id,
+            username=tg_user.username,
+            first_name=tg_user.first_name,
+            last_name=tg_user.last_name,
+            language_code='en'
+        )
+        user = await db.get_user(tg_user.id) or {}
+    lang = user.get('language_code', 'en')
+        
     # Check if waiting for payment proof
     if context.user_data.get('awaiting_payment'):
         await handle_payment_proof(update, context)
@@ -1152,6 +1167,16 @@ async def convert_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_payment_proof(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle payment proof screenshot"""
     user = await db.get_user(update.effective_user.id)
+    if not user:
+        tg_user = update.effective_user
+        await db.create_user(
+            user_id=tg_user.id,
+            username=tg_user.username,
+            first_name=tg_user.first_name,
+            last_name=tg_user.last_name,
+            language_code='en'
+        )
+        user = await db.get_user(tg_user.id) or {}
     lang = user.get('language_code', 'en')
     
     selected_plan = context.user_data.get('selected_plan')

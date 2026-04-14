@@ -232,37 +232,44 @@ class FileConverter:
             output_file = input_file.rsplit('.', 1)[0] + f'.{output_format}'
             
             if output_format == 'pdf':
-                # Use LibreOffice for DOCX to PDF
-                cmd = [
-                    'libreoffice', '--headless', '--convert-to', 'pdf',
-                    '--outdir', os.path.dirname(output_file), input_file
-                ]
-                subprocess.run(cmd, check=True, capture_output=True, timeout=60)
-            
+                # Try LibreOffice first
+                try:
+                    cmd = [
+                        'libreoffice', '--headless', '--convert-to', 'pdf',
+                        '--outdir', os.path.dirname(output_file) or '/tmp', input_file
+                    ]
+                    result = subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+                    # LibreOffice saves with original name + .pdf in outdir
+                    lo_output = os.path.join(
+                        os.path.dirname(output_file) or '/tmp',
+                        Path(input_file).stem + '.pdf'
+                    )
+                    if os.path.exists(lo_output) and lo_output != output_file:
+                        os.rename(lo_output, output_file)
+                except FileNotFoundError:
+                    logger.error("libreoffice not found - cannot convert DOCX to PDF")
+                    return None
+
             elif output_format == 'txt':
-                # Extract text from DOCX
                 doc = Document(input_file)
                 text = '\n\n'.join([para.text for para in doc.paragraphs])
                 with open(output_file, 'w', encoding='utf-8') as f:
                     f.write(text)
             
-            return output_file
+            return output_file if os.path.exists(output_file) else None
         except Exception as e:
             logger.error(f"Document conversion error: {e}")
             return None
+
     
     def _convert_audio(self, input_file: str, output_format: str) -> Optional[str]:
         """Convert audio files using FFmpeg"""
         try:
             output_file = input_file.rsplit('.', 1)[0] + f'.{output_format}'
             
-            # More robust FFmpeg command with error handling
             cmd = [
                 'ffmpeg', '-i', input_file,
-                '-vn',  # No video
-                '-ar', '44100',  # Audio sample rate
-                '-ac', '2',  # Stereo
-                '-b:a', '192k',  # Audio bitrate
+                '-vn', '-ar', '44100', '-ac', '2', '-b:a', '192k',
                 '-y', output_file
             ]
             
@@ -271,12 +278,12 @@ class FileConverter:
             if result.returncode != 0:
                 logger.error(f"FFmpeg error: {result.stderr.decode()}")
                 return None
-                
-            if not os.path.exists(output_file):
-                logger.error(f"Output file not created: {output_file}")
-                return None
-                
-            return output_file
+            
+            return output_file if os.path.exists(output_file) else None
+
+        except FileNotFoundError:
+            logger.error("ffmpeg not found - install ffmpeg on the server")
+            return None
         except subprocess.TimeoutExpired:
             logger.error(f"Audio conversion timeout for {input_file}")
             return None
@@ -291,22 +298,16 @@ class FileConverter:
             output_file = input_file.rsplit('.', 1)[0] + f'.{output_format}'
             
             if output_format == 'gif':
-                # Convert to GIF with optimization
                 cmd = [
                     'ffmpeg', '-i', input_file,
                     '-vf', 'fps=10,scale=480:-1:flags=lanczos',
-                    '-c:v', 'gif',
-                    '-y', output_file
+                    '-c:v', 'gif', '-y', output_file
                 ]
             else:
-                # Standard video conversion
                 cmd = [
                     'ffmpeg', '-i', input_file,
-                    '-c:v', 'libx264',  # Video codec
-                    '-preset', 'medium',
-                    '-crf', '23',
-                    '-c:a', 'aac',  # Audio codec
-                    '-b:a', '128k',
+                    '-c:v', 'libx264', '-preset', 'medium', '-crf', '23',
+                    '-c:a', 'aac', '-b:a', '128k',
                     '-y', output_file
                 ]
             
@@ -315,12 +316,12 @@ class FileConverter:
             if result.returncode != 0:
                 logger.error(f"FFmpeg error: {result.stderr.decode()}")
                 return None
-                
-            if not os.path.exists(output_file):
-                logger.error(f"Output file not created: {output_file}")
-                return None
-                
-            return output_file
+            
+            return output_file if os.path.exists(output_file) else None
+
+        except FileNotFoundError:
+            logger.error("ffmpeg not found - install ffmpeg on the server")
+            return None
         except subprocess.TimeoutExpired:
             logger.error(f"Video conversion timeout for {input_file}")
             return None
