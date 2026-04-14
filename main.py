@@ -1226,36 +1226,53 @@ async def approve_payment_callback(update: Update, context: ContextTypes.DEFAULT
         await query.answer("You are not authorized", show_alert=True)
         return
     
-    payment_id = int(query.data.split('_')[1])
+    parts = query.data.split('_')
     
-    # Approve payment
-    success = await db.approve_payment(payment_id, query.from_user.id)
-    
-    if success:
-        # Get payment info
-        payment = await db.get_payment(payment_id)
-        user_id = payment['user_id']
+    # Handle both "approve_{payment_id}" and "approve_sub_{user_id}_{plan_id}"
+    if parts[1] == 'sub':
+        user_id = int(parts[2])
+        plan_id = int(parts[3])
         
-        # Get user language
-        user = await db.get_user(user_id)
-        lang = user.get('language_code', 'en')
+        # Activate subscription directly
+        plan = await db.get_plan_by_id(plan_id)
+        if not plan:
+            await query.answer("Plan not found", show_alert=True)
+            return
         
-        # Notify user
-        text = get_text(lang, 'payment_approved')
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=text,
+        success = await db.activate_subscription(user_id, plan_id, plan['duration_days'])
+        
+        if success:
+            user = await db.get_user(user_id)
+            lang = user.get('language_code', 'en')
+            text = get_text(lang, 'payment_approved')
+            try:
+                await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+            
+            await query.edit_message_text(
+                query.message.text + "\n\n✅ APPROVED",
                 parse_mode=ParseMode.HTML
             )
-        except:
-            pass
+    else:
+        payment_id = int(parts[1])
+        success = await db.approve_payment(payment_id, query.from_user.id)
         
-        await query.edit_message_caption(
-            caption=query.message.caption + "\n\n✅ APPROVED",
-            parse_mode=ParseMode.HTML
-        )
-
+        if success:
+            payment = await db.get_payment(payment_id)
+            user_id = payment['user_id']
+            user = await db.get_user(user_id)
+            lang = user.get('language_code', 'en')
+            text = get_text(lang, 'payment_approved')
+            try:
+                await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+            
+            await query.edit_message_caption(
+                caption=query.message.caption + "\n\n✅ APPROVED",
+                parse_mode=ParseMode.HTML
+            )
 
 async def reject_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle payment rejection by admin"""
@@ -1266,36 +1283,41 @@ async def reject_payment_callback(update: Update, context: ContextTypes.DEFAULT_
         await query.answer("You are not authorized", show_alert=True)
         return
     
-    payment_id = int(query.data.split('_')[1])
+    parts = query.data.split('_')
     
-    # Reject payment
-    success = await db.reject_payment(payment_id, query.from_user.id, "Rejected by admin")
-    
-    if success:
-        # Get payment info
-        payment = await db.get_payment(payment_id)
-        user_id = payment['user_id']
-        
-        # Get user language
+    if parts[1] == 'sub':
+        user_id = int(parts[2])
         user = await db.get_user(user_id)
         lang = user.get('language_code', 'en')
-        
-        # Notify user
-        text = get_text(lang, 'payment_rejected', reason="Please contact support")
+        text = get_text(lang, 'payment_rejected', reason="Rejected by admin")
         try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=text,
-                parse_mode=ParseMode.HTML
-            )
-        except:
+            await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
+        except Exception:
             pass
         
-        await query.edit_message_caption(
-            caption=query.message.caption + "\n\n❌ REJECTED",
+        await query.edit_message_text(
+            query.message.text + "\n\n❌ REJECTED",
             parse_mode=ParseMode.HTML
         )
-
+    else:
+        payment_id = int(parts[1])
+        success = await db.reject_payment(payment_id, query.from_user.id, "Rejected by admin")
+        
+        if success:
+            payment = await db.get_payment(payment_id)
+            user_id = payment['user_id']
+            user = await db.get_user(user_id)
+            lang = user.get('language_code', 'en')
+            text = get_text(lang, 'payment_rejected', reason="Please contact support")
+            try:
+                await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+            
+            await query.edit_message_caption(
+                caption=query.message.caption + "\n\n❌ REJECTED",
+                parse_mode=ParseMode.HTML
+            )
 
 
 def get_category_keyboard(lang: str):

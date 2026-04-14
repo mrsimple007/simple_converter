@@ -7,8 +7,8 @@ import asyncio
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Configuration
-# BOT_TOKEN = os.environ.get("BOT_TOKEN")
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN_SIMPLELEARNINGUZ")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN_SIMPLELEARNINGUZ")
 
 
 CARD_NUMBER = "4073 4200 3711 6443"
